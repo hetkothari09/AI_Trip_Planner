@@ -62,3 +62,17 @@
 
 /* mapbox-gl base styles (imported here so the bundler picks them up) */
 @import "mapbox-gl/dist/mapbox-gl.css";
+
+/* Print: keep only the final itinerary for "Download PDF" */
+@media print {
+  body {
+    background: #fff;
+  }
+  .no-print {
+    display: none !important;
+  }
+  .print-area {
+    box-shadow: none !important;
+    border: none !important;
+  }
+}

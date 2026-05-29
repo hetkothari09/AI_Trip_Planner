@@ -1,10 +1,12 @@
 import { getLLM } from "./provider";
-import { mockCategories, mockCityPlan, mockPlaces, mockRegions } from "./mock";
+import { mockActivities, mockCategories, mockCityPlan, mockPlaces, mockRegions } from "./mock";
 import {
+  ActivitiesResponseSchema,
   CategoriesResponseSchema,
   CityPlanSchema,
   RankedPlacesResponseSchema,
   RegionsResponseSchema,
+  type Activity,
   type Category,
   type CityPlan,
   type RankedPlace,
@@ -201,14 +203,57 @@ export async function generateCityPlan(
     : "";
   return getLLM().generate({
     system: SYSTEM,
-    prompt: `Build a ${days}-day mini-itinerary for ${city} in ${destination}. Recommend the
-best spots to visit (with realistic visit durations in minutes and a category), the best
-local food places, what dishes the area is famous for, and a recommended number of days.
-Order spots so they form a sensible daily routine (about 3 per day).${researchBlock}`,
+    prompt: `Build a ${days}-day mini-itinerary for ${city} in ${destination}. Use the REAL,
+named attractions of this specific place — actual temples, ghats, viewpoints, lakes, treks,
+museums and markets that appear in official tourism itineraries and travel guides. NEVER use
+generic placeholders like "Main Viewpoint" or "Old Market". For each spot give a realistic
+visit duration (minutes) and a category. Also list the city's real signature local dishes,
+3 actual recommended eateries (real names where known), what it is famous for, and a
+recommended number of days. Order spots into a sensible daily routine (~3 per day).${researchBlock}`,
     schema: CityPlanSchema,
     jsonSchema: cityPlanJsonSchema,
     mock: () => mockCityPlan(destination, city, days),
   });
 }
 
-export type { Region, Category, RankedPlace, CityPlan } from "./schemas";
+const activitiesJsonSchema = {
+  type: "object",
+  properties: {
+    activities: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          id: { type: "string" },
+          name: { type: "string" },
+          description: { type: "string" },
+          provider: { type: "string" },
+          durationMin: { type: "number" },
+          price: { type: "number" },
+          rating: { type: "number" },
+        },
+        required: ["id", "name", "description", "provider", "durationMin", "price", "rating"],
+      },
+    },
+  },
+  required: ["activities"],
+};
+
+/** Phase 10 — recommend reputable activities/experiences for a city. */
+export async function recommendActivities(
+  destination: string,
+  city: string,
+): Promise<Activity[]> {
+  const res = await getLLM().generate({
+    system: SYSTEM,
+    prompt: `Recommend 4-6 top activities/experiences to do in or around ${city}, ${destination}.
+For each give a reputable, reliable operator/provider, a realistic duration (minutes),
+a per-person price in INR, and a rating out of 5.`,
+    schema: ActivitiesResponseSchema,
+    jsonSchema: activitiesJsonSchema,
+    mock: () => ({ activities: mockActivities(destination, city) }),
+  });
+  return res.activities;
+}
+
+export type { Region, Category, RankedPlace, CityPlan, Activity } from "./schemas";

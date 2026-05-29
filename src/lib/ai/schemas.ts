@@ -87,6 +87,22 @@ export const FoodPlaceSchema = z.object({
 });
 export type FoodPlace = z.infer<typeof FoodPlaceSchema>;
 
+/** Phase 10 — a bookable activity/experience in a city. */
+export const ActivitySchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  description: z.string(),
+  provider: z.string(),
+  durationMin: z.number().int().min(15),
+  price: z.number().min(0), // per person, INR
+  rating: z.number().min(0).max(5),
+});
+export type Activity = z.infer<typeof ActivitySchema>;
+
+export const ActivitiesResponseSchema = z.object({
+  activities: z.array(ActivitySchema).min(1),
+});
+
 /** Phase 5 — full mini-itinerary for one city. */
 export const CityPlanSchema = z.object({
   city: z.string(),

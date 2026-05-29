@@ -2,10 +2,11 @@
 
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import type { Category, CityPlan, RankedPlace, Region } from "@/lib/ai/schemas";
+import type { Activity, Category, CityPlan, RankedPlace, Region } from "@/lib/ai/schemas";
+import type { Hotel } from "@/lib/hotels/types";
 import type { RouteResult } from "@/lib/maps";
 
-export type WizardStep = 0 | 1 | 2 | 3 | 4 | 5;
+export type WizardStep = 0 | 1 | 2 | 3 | 4 | 5 | 6;
 
 export interface SelectedPlace extends RankedPlace {
   days: number;
@@ -23,10 +24,16 @@ interface TripState {
   categories: Category[];
   selectedCategoryIds: string[];
 
-  places: RankedPlace[]; // includes optional imageUrl attached by the API
+  places: RankedPlace[];
   selected: Record<string, SelectedPlace>; // keyed by place id
+  order: string[]; // selected place ids, in itinerary order
 
-  cityPlans: Record<string, CityPlan>; // Phase 5, keyed by place id
+  cityPlans: Record<string, CityPlan>; // Phase 5
+  hotels: Record<string, Hotel>; // Phase 6, keyed by place id
+  activities: Record<string, Activity[]>; // Phase 10, keyed by place id
+
+  startId: string | null; // Phase 9
+  endId: string | null;
 
   route: RouteResult | null;
 
@@ -45,6 +52,11 @@ interface TripState {
   togglePlace: (p: RankedPlace) => void;
   setDays: (id: string, days: number) => void;
   setCityPlan: (id: string, plan: CityPlan) => void;
+  setHotel: (id: string, hotel: Hotel | null) => void;
+  toggleActivity: (id: string, activity: Activity) => void;
+  setOrder: (ids: string[]) => void;
+  setStart: (id: string | null) => void;
+  setEnd: (id: string | null) => void;
   setRoute: (r: RouteResult | null) => void;
 
   reset: () => void;
@@ -54,13 +66,18 @@ const initial = {
   step: 0 as WizardStep,
   tripId: null,
   destination: "",
-  regions: [],
+  regions: [] as Region[],
   region: null,
-  categories: [],
-  selectedCategoryIds: [],
-  places: [],
-  selected: {},
-  cityPlans: {},
+  categories: [] as Category[],
+  selectedCategoryIds: [] as string[],
+  places: [] as RankedPlace[],
+  selected: {} as Record<string, SelectedPlace>,
+  order: [] as string[],
+  cityPlans: {} as Record<string, CityPlan>,
+  hotels: {} as Record<string, Hotel>,
+  activities: {} as Record<string, Activity[]>,
+  startId: null,
+  endId: null,
   route: null,
 };
 
@@ -70,7 +87,7 @@ export const useTrip = create<TripState>()(
       ...initial,
 
       goTo: (step) => set({ step }),
-      next: () => set({ step: Math.min(5, get().step + 1) as WizardStep }),
+      next: () => set({ step: Math.min(6, get().step + 1) as WizardStep }),
       back: () => set({ step: Math.max(0, get().step - 1) as WizardStep }),
 
       setDestination: (destination) => set({ destination }),
@@ -87,13 +104,31 @@ export const useTrip = create<TripState>()(
       setPlaces: (places) => set({ places }),
       togglePlace: (p) =>
         set((s) => {
-          const next = { ...s.selected };
-          if (next[p.id]) {
-            delete next[p.id];
-          } else {
-            next[p.id] = { ...p, days: 1 };
+          const selected = { ...s.selected };
+          let order = [...s.order];
+          if (selected[p.id]) {
+            // deselect — drop its derived data too
+            delete selected[p.id];
+            order = order.filter((id) => id !== p.id);
+            const cityPlans = { ...s.cityPlans };
+            const hotels = { ...s.hotels };
+            const activities = { ...s.activities };
+            delete cityPlans[p.id];
+            delete hotels[p.id];
+            delete activities[p.id];
+            return {
+              selected,
+              order,
+              cityPlans,
+              hotels,
+              activities,
+              startId: s.startId === p.id ? null : s.startId,
+              endId: s.endId === p.id ? null : s.endId,
+            };
           }
-          return { selected: next };
+          selected[p.id] = { ...p, days: 1 };
+          order.push(p.id);
+          return { selected, order };
         }),
       setDays: (id, days) =>
         set((s) => {
@@ -101,8 +136,28 @@ export const useTrip = create<TripState>()(
           if (!sel) return {};
           return { selected: { ...s.selected, [id]: { ...sel, days: Math.max(1, days) } } };
         }),
-      setCityPlan: (id, plan) =>
-        set((s) => ({ cityPlans: { ...s.cityPlans, [id]: plan } })),
+      setCityPlan: (id, plan) => set((s) => ({ cityPlans: { ...s.cityPlans, [id]: plan } })),
+      setHotel: (id, hotel) =>
+        set((s) => {
+          const hotels = { ...s.hotels };
+          if (hotel) hotels[id] = hotel;
+          else delete hotels[id];
+          return { hotels };
+        }),
+      toggleActivity: (id, activity) =>
+        set((s) => {
+          const list = s.activities[id] ?? [];
+          const exists = list.some((a) => a.id === activity.id);
+          return {
+            activities: {
+              ...s.activities,
+              [id]: exists ? list.filter((a) => a.id !== activity.id) : [...list, activity],
+            },
+          };
+        }),
+      setOrder: (ids) => set({ order: ids }),
+      setStart: (startId) => set({ startId }),
+      setEnd: (endId) => set({ endId }),
       setRoute: (route) => set({ route }),
 
       reset: () => set({ ...initial }),
@@ -111,7 +166,7 @@ export const useTrip = create<TripState>()(
   ),
 );
 
-/** Selected places as an ordered array (selection order preserved via id list). */
+/** Selected places in itinerary order. */
 export function selectedList(state: TripState): SelectedPlace[] {
-  return Object.values(state.selected);
+  return state.order.map((id) => state.selected[id]).filter(Boolean);
 }

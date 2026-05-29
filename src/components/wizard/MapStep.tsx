@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ArrowLeft, Clock, Route as RouteIcon, Loader2 } from "lucide-react";
+import { ArrowLeft, ArrowRight, Clock, Route as RouteIcon, Loader2, Wand2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { MapPanel } from "@/components/map/MapPanel";
@@ -11,11 +11,12 @@ import type { RouteResult } from "@/lib/maps";
 
 export function MapStep() {
   const store = useTrip();
-  const { region, route, setRoute, back } = store;
+  const { region, route, setRoute, setOrder, startId, endId, setStart, setEnd, back, next } = store;
   const places = selectedList(store);
   const [loading, setLoading] = useState(false);
+  const [optimizing, setOptimizing] = useState(false);
 
-  // Recompute the route in real time whenever the selected stops change.
+  // Recompute the route in real time whenever the ordered stops change.
   const key = places.map((p) => p.id).join("|");
   const lastKey = useRef<string>("");
 
@@ -39,6 +40,30 @@ export function MapStep() {
       .finally(() => setLoading(false));
   }, [key, places, setRoute]);
 
+  async function optimize() {
+    if (places.length < 3) return;
+    setOptimizing(true);
+    try {
+      const stops = places.map((p) => ({ name: p.name, lat: p.lat, lng: p.lng }));
+      const start = startId ? store.selected[startId]?.name : undefined;
+      const end = endId ? store.selected[endId]?.name : undefined;
+      const res = await fetch("/api/route", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ stops, optimize: true, startName: start, endName: end }),
+      });
+      const data: { route: RouteResult; order: string[] } = await res.json();
+      // map optimized names back to place ids, preserving the new order
+      const byName = new Map(places.map((p) => [p.name, p.id]));
+      const newOrder = data.order.map((n) => byName.get(n)).filter(Boolean) as string[];
+      lastKey.current = newOrder.join("|"); // we already have the route; skip refetch
+      setOrder(newOrder);
+      setRoute(data.route);
+    } finally {
+      setOptimizing(false);
+    }
+  }
+
   const mapStops = places.map((p) => ({ id: p.id, name: p.name, lat: p.lat, lng: p.lng }));
 
   return (
@@ -47,8 +72,8 @@ export function MapStep() {
         <div>
           <h1 className="font-serif text-3xl font-semibold tracking-tight">Your route</h1>
           <p className="mt-1 text-muted-foreground">
-            {places.length} stops across {region?.name}. The map and travel times update as
-            your selection changes.
+            {places.length} stops across {region?.name}. Connected by shortest road distance —
+            optimize the order below for the least travel time.
           </p>
         </div>
         <Button variant="ghost" onClick={back}>
@@ -62,6 +87,56 @@ export function MapStep() {
         </div>
 
         <aside className="flex flex-col gap-4">
+          {/* optimizer */}
+          <div className="rounded-xl border bg-card p-4 shadow-sm">
+            <div className="flex items-center gap-2">
+              <Wand2 className="size-4 text-primary" />
+              <h2 className="font-semibold">Optimize route</h2>
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Pick a start (end optional) — we reorder stops for the least journey time.
+            </p>
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <label className="text-xs">
+                <span className="mb-1 block text-muted-foreground">Start</span>
+                <select
+                  className="w-full rounded-md border bg-background px-2 py-1.5 text-sm"
+                  value={startId ?? ""}
+                  onChange={(e) => setStart(e.target.value || null)}
+                >
+                  <option value="">Any</option>
+                  {places.map((p) => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="text-xs">
+                <span className="mb-1 block text-muted-foreground">End (optional)</span>
+                <select
+                  className="w-full rounded-md border bg-background px-2 py-1.5 text-sm"
+                  value={endId ?? ""}
+                  onChange={(e) => setEnd(e.target.value || null)}
+                >
+                  <option value="">Any</option>
+                  {places.map((p) => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            <Button
+              className="mt-3 w-full"
+              onClick={optimize}
+              disabled={optimizing || places.length < 3}
+            >
+              {optimizing ? <Loader2 className="size-4 animate-spin" /> : <Wand2 className="size-4" />}
+              Optimize order
+            </Button>
+            {places.length < 3 && (
+              <p className="mt-2 text-xs text-muted-foreground">Add 3+ stops to optimize.</p>
+            )}
+          </div>
+
           <div className="rounded-xl border bg-card p-4 shadow-sm">
             <div className="flex items-center justify-between">
               <h2 className="font-semibold">Itinerary order</h2>
@@ -121,10 +196,9 @@ export function MapStep() {
             </div>
           )}
 
-          <div className="rounded-xl border border-dashed bg-muted/40 p-4 text-sm text-muted-foreground">
-            Coming next: per-city mini-itineraries, hotels &amp; live cost calculator, route
-            optimization, and PDF/Excel export.
-          </div>
+          <Button size="lg" onClick={next}>
+            Build final itinerary <ArrowRight className="size-4" />
+          </Button>
         </aside>
       </div>
     </div>

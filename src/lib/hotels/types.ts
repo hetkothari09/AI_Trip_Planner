@@ -1,0 +1,29 @@
+/** A price for the same hotel on one booking site (Phase 6 comparison). */
+export interface SitePrice {
+  site: string; // "MakeMyTrip" | "Goibibo" | ...
+  price: number; // per night, INR
+  url: string; // deep link to that site's search/listing
+}
+
+export interface Hotel {
+  id: string;
+  name: string;
+  stars: number;
+  rating: number; // user rating /5
+  pricePerNight: number; // headline (best) price, INR
+  currency: string;
+  imageUrl: string;
+  amenities: string[];
+  area: string;
+  // price across the top Indian booking sites, cheapest first
+  prices: SitePrice[];
+  bestPriceSite: string;
+}
+
+export interface HotelSearchParams {
+  city: string;
+  destination: string;
+  budgetMax: number; // per night ceiling, INR
+  minStars: number;
+  nights: number;
+}

@@ -1,5 +1,7 @@
 import { seededRandom } from "@/lib/utils";
+import { lookupCuratedCity } from "./cityData";
 import type {
+  Activity,
   Category,
   CityPlan,
   CitySpot,
@@ -226,7 +228,21 @@ const FAMOUS_FOR = ["Himalayan panoramas", "colonial-era charm", "temple archite
 
 export function mockCityPlan(destination: string, city: string, days: number): CityPlan {
   const d = Math.max(1, Math.min(10, days || 1));
-  // ~3 spots per day, deterministically chosen + ordered by seed
+
+  // Prefer real curated data for known cities so itineraries are genuine, not templated.
+  const curated = lookupCuratedCity(city);
+  if (curated) {
+    return {
+      city,
+      recommendedDays: curated.recommendedDays,
+      famousFor: curated.famousFor,
+      localFood: curated.localFood,
+      spots: curated.spots,
+      foodPlaces: curated.foodPlaces,
+    };
+  }
+
+  // ~3 spots per day, deterministically chosen + ordered by seed (generic fallback)
   const count = d * 3;
   const ordered = [...SPOT_TEMPLATES]
     .map((t, i) => ({ t, r: seededRandom(`${city}-${t.suffix}-${i}`) }))
@@ -259,4 +275,35 @@ export function mockCityPlan(destination: string, city: string, days: number): C
       note: i === 0 ? "Most recommended by locals and food vloggers" : undefined,
     })),
   };
+}
+
+// ─── Phase 10: activities mock ─────────────────────────────────────────────────
+
+const ACTIVITY_TEMPLATES: { name: string; durationMin: number; price: number }[] = [
+  { name: "Guided Sunrise Trek", durationMin: 240, price: 1200 },
+  { name: "River Rafting Expedition", durationMin: 180, price: 1500 },
+  { name: "Cable Car & Ropeway Ride", durationMin: 60, price: 500 },
+  { name: "Paragliding Tandem Flight", durationMin: 45, price: 2800 },
+  { name: "Heritage Village Walk", durationMin: 120, price: 700 },
+  { name: "Camping & Bonfire Night", durationMin: 720, price: 2000 },
+  { name: "Wildlife Safari", durationMin: 210, price: 2500 },
+  { name: "Local Cooking Workshop", durationMin: 150, price: 900 },
+];
+
+const PROVIDERS = ["Himalayan Adventures Co.", "Local Trails (govt-certified)", "Peak Experiences", "Valley Outdoors"];
+
+export function mockActivities(destination: string, city: string): Activity[] {
+  return [...ACTIVITY_TEMPLATES]
+    .map((t, i) => ({ t, r: seededRandom(`${city}-act-${t.name}-${i}`) }))
+    .sort((a, b) => a.r - b.r)
+    .slice(0, 5)
+    .map(({ t }, i) => ({
+      id: `${city}-act-${i}`.toLowerCase().replace(/\s+/g, "-"),
+      name: `${t.name} in ${city}`,
+      description: `${t.name} — a top-rated experience around ${city}, run by a reputable local operator.`,
+      provider: PROVIDERS[i % PROVIDERS.length],
+      durationMin: t.durationMin,
+      price: t.price,
+      rating: Math.round((4 + seededRandom(`${city}-actr-${i}`)) * 10) / 10,
+    }));
 }
