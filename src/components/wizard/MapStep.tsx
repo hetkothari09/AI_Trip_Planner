@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { MapPanel } from "@/components/map/MapPanel";
 import { useTrip, selectedList } from "@/lib/store/trip";
 import { formatDuration } from "@/lib/utils";
-import type { RouteResult } from "@/lib/maps";
+import { getRoute, optimizeRoute } from "@/lib/maps";
 
 export function MapStep() {
   const store = useTrip();
@@ -29,13 +29,10 @@ export function MapStep() {
     }
     setLoading(true);
     const stops = places.map((p) => ({ name: p.name, lat: p.lat, lng: p.lng }));
-    fetch("/api/route", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ stops }),
-    })
-      .then((r) => r.json())
-      .then((d: { route: RouteResult }) => setRoute(d.route))
+    // Routing runs in the browser (OSRM is CORS-enabled) so it uses the user's IP
+    // rather than the server's datacenter IP, which public OSRM blocks.
+    getRoute(stops)
+      .then(setRoute)
       .catch(() => setRoute(null))
       .finally(() => setLoading(false));
   }, [key, places, setRoute]);
@@ -47,18 +44,13 @@ export function MapStep() {
       const stops = places.map((p) => ({ name: p.name, lat: p.lat, lng: p.lng }));
       const start = startId ? store.selected[startId]?.name : undefined;
       const end = endId ? store.selected[endId]?.name : undefined;
-      const res = await fetch("/api/route", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ stops, optimize: true, startName: start, endName: end }),
-      });
-      const data: { route: RouteResult; order: string[] } = await res.json();
+      const { ordered, route: optRoute } = await optimizeRoute(stops, start, end);
       // map optimized names back to place ids, preserving the new order
       const byName = new Map(places.map((p) => [p.name, p.id]));
-      const newOrder = data.order.map((n) => byName.get(n)).filter(Boolean) as string[];
+      const newOrder = ordered.map((s) => byName.get(s.name)).filter(Boolean) as string[];
       lastKey.current = newOrder.join("|"); // we already have the route; skip refetch
       setOrder(newOrder);
-      setRoute(data.route);
+      setRoute(optRoute);
     } finally {
       setOptimizing(false);
     }
